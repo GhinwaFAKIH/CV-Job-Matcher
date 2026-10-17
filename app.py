@@ -1,4 +1,6 @@
 import streamlit as st
+import tempfile
+from pathlib import Path
 
 from parser import extract_text
 from extractor import (
@@ -34,33 +36,35 @@ with col1:
 
 with col2:
     st.subheader("Job Description")
-    job_file = st.file_uploader(
-        "Upload the job description",
-        type=["pdf"],
-        key="job"
-    )
+    job_input = st.radio("Job description format", ["Paste text", "Upload PDF"], horizontal=True)
+    if job_input == "Paste text":
+        job_text_input = st.text_area("Paste the job description", height=240)
+        job_file = None
+    else:
+        job_file = st.file_uploader("Upload the job description", type=["pdf"], key="job")
+        job_text_input = ""
 
 
 if st.button("🔍 Analyze Match", type="primary"):
 
-    if cv_file is None or job_file is None:
+    if cv_file is None or (not job_text_input.strip() and job_file is None):
         st.warning("Please upload both your CV and the job description.")
 
     else:
 
         with st.spinner("Analyzing your CV and the job description..."):
 
-            # Save uploaded CV temporarily
-            with open("temp_cv.pdf", "wb") as f:
-                f.write(cv_file.getbuffer())
-
-            # Save uploaded job temporarily
-            with open("temp_job.pdf", "wb") as f:
-                f.write(job_file.getbuffer())
-
-            # Extract text
-            cv_text = extract_text("temp_cv.pdf")
-            job_text = extract_text("temp_job.pdf")
+            # Per-request temporary directory; removed after text extraction.
+            with tempfile.TemporaryDirectory(prefix="cv_match_") as tmp:
+                cv_path = Path(tmp) / "cv.pdf"
+                cv_path.write_bytes(cv_file.getvalue())
+                cv_text = extract_text(str(cv_path))
+                if job_file is not None:
+                    job_path = Path(tmp) / "job.pdf"
+                    job_path.write_bytes(job_file.getvalue())
+                    job_text = extract_text(str(job_path))
+                else:
+                    job_text = job_text_input.strip()
 
             # LLM extraction
             candidate = extract_candidate_profile(cv_text)
